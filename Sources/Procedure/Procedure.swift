@@ -28,8 +28,8 @@ public final class Procedure<Input, Output>: ConcurrentOperation {
     }
 
     public func then<NewOutput>(_ nextProcedure: Procedure<Output, NewOutput>) -> Procedure<Output, NewOutput> {
-        guard !self.isFinished else {
-            nextProcedure.input = self.output
+        guard !isFinished else {
+            nextProcedure.input = output
             nextProcedure.queue.addOperation(nextProcedure)
             return nextProcedure
         }
@@ -41,7 +41,7 @@ public final class Procedure<Input, Output>: ConcurrentOperation {
         adapter.addDependency(self)
         nextProcedure.addDependency(adapter)
 
-        if !self.isAlreadyAddedToQueue() {
+        if !isAlreadyAddedToQueue() {
             addToQueue()
         }
         queue.addOperation(adapter)
@@ -60,6 +60,16 @@ public final class Procedure<Input, Output>: ConcurrentOperation {
             fullfill(())
         }
         _ = then(finalBlock)
+    }
+
+    public func then<NewOutput>(executeOn queue: OperationQueue,
+                                _ work: @escaping (Output) -> NewOutput) -> Procedure<Output, NewOutput> {
+        return then(Procedure<Output, NewOutput>(executeOn: queue, work))
+    }
+
+    /// Returns new procedure which will perform work on the same queue as this procedure with results of this procedure
+    public func then<NewOutput>(_ work: @escaping (Output) -> NewOutput) -> Procedure<Output, NewOutput> {
+        return then(Procedure<Output, NewOutput>(executeOn: queue, work))
     }
 }
 

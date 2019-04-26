@@ -4,18 +4,18 @@ import XCTest
 class ProcedureTests: XCTestCase {
     private var queue: OperationQueue!
     private var queue2: OperationQueue!
-    
+
     override func setUp() {
         super.setUp()
         queue = OperationQueue()
         queue.maxConcurrentOperationCount = 10
         queue.isSuspended = false
-        
+
         queue2 = OperationQueue()
         queue2.maxConcurrentOperationCount = 10
         queue2.isSuspended = false
     }
-    
+
     override func tearDown() {
         queue.cancelAllOperations()
         queue = nil
@@ -23,10 +23,10 @@ class ProcedureTests: XCTestCase {
         queue2 = nil
         super.tearDown()
     }
-    
+
     func testChaining() {
         let correctResultExpectation = expectation(description: "Correct result received")
-        
+
         Procedure<Void, Bool>(executeOn: queue, { _, fullfill in
             Thread.sleep(forTimeInterval: 0.3)
             fullfill(true)
@@ -36,51 +36,65 @@ class ProcedureTests: XCTestCase {
         })).finally { _ in
             correctResultExpectation.fulfill()
         }
-        
+
         waitForExpectations(timeout: 1, handler: nil)
     }
-    
+
     func testFinally() {
         let correctResultExpectation = expectation(description: "Correct result received")
-        
+
         Procedure<Void, Int>(executeOn: queue) { _, fullfill in
             Thread.sleep(forTimeInterval: 0.3)
             fullfill(10)
-            }.finally { _ in
-                correctResultExpectation.fulfill()
+        }.finally { _ in
+            correctResultExpectation.fulfill()
         }
         waitForExpectations(timeout: 05, handler: nil)
     }
-    
+
     func testTreeDependency() {
         let downloadProcedure = Procedure<Void, Int>(executeOn: queue) { () -> Int in
-            return 10
+            10
         }
-        
+
         let multiplyProcedure = Procedure<Int, Int>(executeOn: queue) { (value) -> Int in
-            return value * value
+            value * value
         }
-        
+
         let doubleProcedure = Procedure<Int, Int>(executeOn: queue2) { (value) -> Int in
-            return value * 2
+            value * 2
         }
-        
+
         let multiplyFinished = expectation(description: "Multiply finished")
-        
-        downloadProcedure.then(multiplyProcedure).finally { (multipliedValue) in
+
+        downloadProcedure.then(multiplyProcedure).finally { multipliedValue in
             XCTAssertEqual(multipliedValue, 100)
             multiplyFinished.fulfill()
         }
-        
+
         let doubleFinished = expectation(description: "Double finished")
-        downloadProcedure.then(doubleProcedure).finally { (doubledValue) in
+        downloadProcedure.then(doubleProcedure).finally { doubledValue in
             XCTAssertEqual(doubledValue, 20)
             doubleFinished.fulfill()
         }
-        
+
         waitForExpectations(timeout: 2, handler: nil)
     }
-    
+
+    func testConvenientThen() {
+        let finalCalled = expectation(description: "Final called")
+        Procedure<Void, Int>(executeOn: queue) { () -> Int in
+            10
+        }.then { (v) -> Int in
+            v * v
+        }.finally { v in
+            XCTAssertEqual(v, 100)
+            finalCalled.fulfill()
+        }
+
+        waitForExpectations(timeout: 1, handler: nil)
+    }
+
     //  func testReverseTreeDependency() {
     //    let download1Procedure = Procedure<Void, Int>(executeOn: queue) { () -> Int in
     //      return 10
@@ -109,7 +123,7 @@ class ProcedureTests: XCTestCase {
     //
     //    waitForExpectations(timeout: 2, handler: nil)
     //  }
-    
+
     static var allTests = [
         ("testChaining", testChaining),
         ("testFinally", testFinally),
