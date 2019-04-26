@@ -28,17 +28,28 @@ public final class Procedure<Input, Output>: ConcurrentOperation {
     }
 
     public func then<NewOutput>(_ nextProcedure: Procedure<Output, NewOutput>) -> Procedure<Output, NewOutput> {
+        guard !self.isFinished else {
+            nextProcedure.input = self.output
+            nextProcedure.queue.addOperation(nextProcedure)
+            return nextProcedure
+        }
+
         let adapter = BlockOperation { [unowned nextProcedure] in
             nextProcedure.input = self.output
         }
 
         adapter.addDependency(self)
         nextProcedure.addDependency(adapter)
-        if !queue.operations.contains(self) {
-            queue.addOperation(self)
+
+        if !self.isAlreadyAddedToQueue() {
+            addToQueue()
         }
         queue.addOperation(adapter)
-        nextProcedure.queue.addOperation(nextProcedure)
+
+        guard !nextProcedure.isAlreadyAddedToQueue() else {
+            preconditionFailure("Two procedures chains to the same procedure isn't supported.")
+        }
+        nextProcedure.addToQueue()
 
         return nextProcedure
     }
@@ -48,24 +59,31 @@ public final class Procedure<Input, Output>: ConcurrentOperation {
             block(output)
             fullfill(())
         }
-        _ = self.then(finalBlock)
+        _ = then(finalBlock)
     }
-
 }
 
 private extension Procedure {
     func runMain() {
-        work(input, { [unowned self] output in
+        work(input) { [unowned self] output in
             self.output = output
             self.finish()
-        })
+        }
     }
 
     private func runVoidMain() {
-        work(() as! Input, { [unowned self] output in
+        work(() as! Input) { [unowned self] output in
             self.output = output
             self.finish()
-        })
+        }
+    }
+
+    private func addToQueue() {
+        queue.addOperation(self)
+    }
+
+    private func isAlreadyAddedToQueue() -> Bool {
+        return queue.operations.contains(self)
     }
 }
 
@@ -88,11 +106,11 @@ open class ConcurrentOperation: Operation {
     @objc
     private dynamic var state: State {
         get {
-            return stateQueue.sync(execute: { rawState })
+            return stateQueue.sync { rawState }
         }
         set {
             willChangeValue(forKey: #keyPath(state))
-            stateQueue.sync(flags: .barrier, execute: { rawState = newValue })
+            stateQueue.sync(flags: .barrier) { rawState = newValue }
             didChangeValue(forKey: #keyPath(state))
         }
     }
@@ -127,7 +145,7 @@ open class ConcurrentOperation: Operation {
 
     // MARK: - Foundation.Operation
 
-    public override final func start() {
+    public final override func start() {
         super.start()
 
         guard !isCancelled else {
@@ -156,11 +174,11 @@ open class ConcurrentOperation: Operation {
 }
 
 public extension Operation {
-    public func run(on queue: OperationQueue) {
+    func run(on queue: OperationQueue) {
         queue.addOperation(self)
     }
 
-    public func addDependencies(_ operations: [Operation]) {
+    func addDependencies(_ operations: [Operation]) {
         operations.forEach {
             addDependency($0)
         }
